@@ -13,7 +13,6 @@ class TetrisGrid:
         self.y = 0
 
     def __str__(self):
-        self.update_grid()
         string = ''
         for row in self.matrix:
             string += ' '.join(map(str, row)) + '\n'
@@ -22,35 +21,58 @@ class TetrisGrid:
     def update_grid(self):
         self.matrix = np.full([self.height, self.width], "-", dtype=str)
         if self.piece:
+            # fill piece's pixels in the matrix
             for pixel in self.piece.matrices[self.piece.position]:
                 self.matrix[int(pixel / self.width)][pixel % self.width] = '0'
 
         self.matrix = np.roll(self.matrix, self.y, axis=0)
         self.matrix = np.roll(self.matrix, self.x, axis=1)
 
+        # check if bottom is reached
+        if any(self.matrix[self.height - 1][i] == '0' for i in range(self.width)):
+            self.piece.static = True
+
+    def ensure_lively(func):
+        def inner(self):
+            if not self.piece.static:
+                func(self)
+        return inner
+
+    @ensure_lively
     def move_left(self):
-        self.x -= 1
+        # ensure no pixels on border
+        if all(self.matrix[i][0] == '-' for i in range(self.height)):
+            self.x -= 1
         self.move_down()
 
+    @ensure_lively
     def move_right(self):
-        self.x += 1
+        # ensure no pixels on border
+        if all(self.matrix[i][self.width - 1] == '-' for i in range(self.height)):
+            self.x += 1
         self.move_down()
 
+    @ensure_lively
     def move_down(self):
         self.y += 1
+        self.update_grid()
 
+    @ensure_lively
     def rotate_piece(self):
         self.piece.left_roll()
+        self.update_grid()
         self.move_down()
 
     def load_piece(self, piece):
         self.piece = piece
+        self.update_grid()
 
 
 class TetrisPiece:
     def __init__(self):
         self.matrices = []
         self.position = 0
+        self.static = False
 
     def left_roll(self):
         self.position = (self.position + 1) % len(self.matrices)
