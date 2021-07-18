@@ -2,15 +2,12 @@
 
 import numpy as np
 
-
 class TetrisGrid:
     def __init__(self, width, height):
         self.height = height
         self.width = width
         self.matrix = np.full([height, width], "-", dtype=str)
         self.piece = None
-        self.x = 0
-        self.y = 0
 
     def __str__(self):
         string = ''
@@ -18,54 +15,112 @@ class TetrisGrid:
             string += ' '.join(map(str, row)) + '\n'
         return string
 
-    def update_grid(self):
-        self.matrix = np.full([self.height, self.width], "-", dtype=str)
+    def check_static(func):
+        def inner(self):
+            if not self.piece.static:
+                # check if bottom is reached
+                if any(int(pixel / self.width) == self.height - 1 for
+                       pixel in self.piece.matrices[self.piece.position]):
+                    self.piece.static = True
+                # check if other piece is touched
+                else:
+                    # remove current piece from board to make check easier
+                    self.wipe_piece()
+                    if any(self.matrix[int(pixel / self.width) + 1][pixel % self.width] == '0' for
+                            pixel in self.piece.matrices[self.piece.position]):
+                        self.piece.static = True
+                    self.set_piece()
+                if not self.piece.static:
+                    func(self)
+        return inner
+
+    def check_alive(func):
+        def inner(self, *args):
+            global alive
+            func(self, *args)
+            if any(all(self.matrix[j][i] == '0' for j in range(self.height))
+                    for i in range(self.width)):
+                alive = False
+        return inner
+
+    def set_piece(self):
         if self.piece:
             # fill piece's pixels in the matrix
             for pixel in self.piece.matrices[self.piece.position]:
                 self.matrix[int(pixel / self.width)][pixel % self.width] = '0'
 
-        self.matrix = np.roll(self.matrix, self.y, axis=0)
-        self.matrix = np.roll(self.matrix, self.x, axis=1)
+    def wipe_piece(self):
+        if self.piece:
+            # remove piece's pixels in the matrix
+            for pixel in self.piece.matrices[self.piece.position]:
+                self.matrix[int(pixel / self.width)][pixel % self.width] = '-'
 
-        # check if bottom is reached
-        if any(self.matrix[self.height - 1][i] == '0' for i in range(self.width)):
-            self.piece.static = True
-
-    def ensure_lively(func):
-        def inner(self):
-            if not self.piece.static:
-                func(self)
-        return inner
-
-    @ensure_lively
+    @check_alive
+    @check_static
     def move_left(self):
-        # ensure no pixels on border
-        if all(self.matrix[i][0] == '-' for i in range(self.height)):
-            self.x -= 1
+        self.wipe_piece()
+        # ensure no pixels on left border
+        if all(pixel % self.width != 0 for
+                pixel in self.piece.matrices[self.piece.position]):
+            # shift pixels
+            self.piece.matrices = list(map(
+                lambda x: list(map(lambda y: y - 1, x)), self.piece.matrices))
+        self.set_piece()
         self.move_down()
 
-    @ensure_lively
+    @check_alive
+    @check_static
     def move_right(self):
-        # ensure no pixels on border
-        if all(self.matrix[i][self.width - 1] == '-' for i in range(self.height)):
-            self.x += 1
+        self.wipe_piece()
+        # ensure no pixels on right border
+        if all(pixel % self.width != self.width - 1 for
+                pixel in self.piece.matrices[self.piece.position]):
+            # shift pixels
+            self.piece.matrices = list(map(
+                lambda x: list(map(lambda y: y + 1, x)), self.piece.matrices))
+        self.set_piece()
         self.move_down()
 
-    @ensure_lively
+    @check_alive
+    @check_static
     def move_down(self):
-        self.y += 1
-        self.update_grid()
+        self.wipe_piece()
+        # shift pixels
+        self.piece.matrices = list(map(
+            lambda x: list(map(lambda y: y + self.width, x)), self.piece.matrices))
+        self.set_piece()
 
-    @ensure_lively
+    @check_alive
+    @check_static
     def rotate_piece(self):
+        self.wipe_piece()
         self.piece.left_roll()
-        self.update_grid()
+        self.set_piece()
         self.move_down()
+
+    def roll_grid(self):
+        # clear last row
+        for i in range(self.width):
+            self.matrix[self.height - 1][i] = "-"
+        self.matrix = np.roll(self.matrix, 1, axis=0)
+
+    def clear_rows(self):
+        while all(self.matrix[self.height - 1][i] == '0' for i in range(self.width)):
+            if self.piece:
+                if any(int(pixel / self.width) == self.height - 1 for
+                        pixel in self.piece.matrices[self.piece.position]):
+                    self.piece = None
+                else:
+                    self.move_down()
+                    self.wipe_piece()
+            self.roll_grid()
+            if self.piece:
+                self.set_piece()
 
     def load_piece(self, piece):
-        self.piece = piece
-        self.update_grid()
+        if not self.piece or self.piece.static:
+            self.piece = piece
+            self.set_piece()
 
 
 class TetrisPiece:
@@ -145,18 +200,22 @@ def select_piece(symbol):
     return switch.get(symbol)
 
 
+alive = True
+
+
 def run():
-    piece = select_piece(input())()
     grid = TetrisGrid(*map(lambda x: int(x), input().split()))
     print(grid)
-    grid.load_piece(piece)
-    print(grid)
 
-    while True:
+    while alive:
         # command = input("Input command: ")
         command = input()
 
-        if command == "left":
+        if command == "piece":
+            grid.load_piece(select_piece(input())())
+            print(grid)
+
+        elif command == "left":
             grid.move_left()
             print(grid)
 
@@ -172,8 +231,14 @@ def run():
             grid.move_down()
             print(grid)
 
+        elif command == "break":
+            grid.clear_rows()
+            print(grid)
+
         elif command == "exit":
             break
+
+    print("Game Over!")
 
 
 # do run
